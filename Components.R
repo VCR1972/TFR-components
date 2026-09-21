@@ -1,10 +1,15 @@
 ### This program decomposes the TFR into its fertility vs childlessness parts
 ### we use  life table 
-
 library(tidyr)
 library(patchwork)
 library(dplyr)
 options(scipen = 999)
+
+
+########################################################################################
+########################     FUNCTIONS     #############################################
+########################################################################################
+
 
 LifeTableMx<-function(mx){ 
   
@@ -37,60 +42,54 @@ LifeTableMx<-function(mx){
   }
   
   Tx<-Tx-Tx[N] 
-  ### since our interest is of life expectancy between ages 12 and 55, 
-  ### we subtract the last value
   
   ex<-Tx/lx 
   
-  Age<-12:55    
+  Age<-15:55    
   
   ALL<-data.frame(Age,mx,lx,dx,Lx,Tx,ex)
   return(ALL)
 }
 
 
-Fertility1<-function(LTs,As){
-  B<-As
-  PC<-(LTs$lx/100000)
-  AFR<-B$ASFR[1]
-  ASFR1<-B$ASFR[1]/(1-PC[1])
-  ASFR1[(is.nan(ASFR1))|(is.infinite(ASFR1))]<-0
-  AFR1<-ASFR1
-  for (x in 2:length(A1$Age)){
-    AFR[x]<-sum(B$ASFR[1:x])
-    ASFR1[x]<-0
-    if (PC[x]<1){
-      ASFR1[x]<-(AFR[x]/(1-PC[x]))-AFR1[x-1]}
-    AFR1[x]<-sum(ASFR1[1:(x)])
-  }
-  ## to test
-  ## AFR/(1-PC)
-  return(ASFR1)
+Fertility<-function(As,Y,i){
+  
+  A1<-As[As$Year==Rg[Y],]
+  
+  Age<-A1$Age
+  Year<-Rg[Y]
+  Country <- Name[i]
+  AFR<-cumsum(A1$ASFR)
+  AFR1p<-cumsum(A1$ASFR1p)
+  LT<-LifeTableMx(A1$ASFR1)$lx/100000
+  
+  B <- data.frame(Country = Country,Year = Year,Age = Age,
+                  AFR1 = AFR1p,AFR = AFR,PC = LT)
+  return(B)
 }
 
 
-AgeDecomp<-function(lt1,b1,a1,lt2,b2,a2){ 
+AgeDecomp<-function(b1,b2,Y){ 
   ### checking for time 1
   
-  PC<-lt1$lx/100000
-  afr<-b1$AFR
+  PC<-b1$PC
+  AFR<-b1$AFR
   afr1<-b1$AFR1
+  afr<-afr1*(1-PC)
+  
   
   n<-length(afr)
   
   f1<-(afr[-1]/(1-PC[-1]))-afr1[-n]
-  f1[(1-PC[-1])==0]<-0
+  
   
   t1<-f1*(1-PC[-1])
   t2<-afr1[-n]*(PC[-n]-PC[-1])
-  
-  #  cbind(A1$ASFR[-1],t1+t2) 
-  
-  ### checking for time 2
-  
-  PC2<-lt2$lx/100000
-  afr2<-b2$AFR
+    
+  PC2<-b2$PC
+  AFR2<-b2$AFR
   afr12<-b2$AFR1
+  afr2<-afr12*(1-PC2)
   
   n<-length(afr2)
   
@@ -99,11 +98,7 @@ AgeDecomp<-function(lt1,b1,a1,lt2,b2,a2){
   
   t12<-f12*(1-PC2[-1])
   t22<-afr12[-n]*(PC2[-n]-PC2[-1])
-  
-  #   cbind(A2$ASFR[-1],t12+t22)   
-  ### very good matching except for the first ages
-  
-  
+    
   ## now the decomposition kitagawa type
   
   termPC<-(afr12[-n]+afr1[-n])/2*(PC2[-n]-PC2[-1]-(PC[-n]-PC[-1]))+
@@ -114,31 +109,22 @@ AgeDecomp<-function(lt1,b1,a1,lt2,b2,a2){
     (afr12[-n]-afr1[-n])*((PC2[-n]-PC2[-1])+(PC[-n]-PC[-1]))/2
   
   
-  ASFR<-a1$ASFR[-1]
-  ASFR2<-a2$ASFR[-1]
-  
-  CASFR<-ASFR2-ASFR
-  D0<-cbind(ASFR,ASFR2,sqrt(ASFR2*ASFR),CASFR)
-  
   Decomp<-termf1+termPC
-  age<-Age[-1]
-  TFR2<-sum(ASFR2)
-  TFR1<-sum(ASFR)
-  CTFR<-TFR2-TFR1
-  c(colSums(D0),CTFR) 
-  D<-cbind(age,termf1,termPC)
-  
-  Tot<-  colSums(D)
+  age<-b1$Age[-1]
+  Country <- rep(Name[i],length(age))
+  Year <- rep(Y,length(age))
+  D<-cbind(Country,Year,age,Decomp,termf1,termPC)
   
   D_d <- as.data.frame(D)
   
   return(D_d)
 }
 
+ 
 
 Name<-c("AUT","BLR","BEL","BGR","CAN","CHL",
         "HRV","CZE","DNK","EST","FIN",
-        "DEUTNP","HUN","ISL","IRL",
+        "DEUTNP","DEUTE","DEUTW","HUN","ISL","IRL",
         "ITA","JPN","LTU","NLD","NOR","POL","PRT",
         "KOR","RUS","SVK","SVN","ESP","SWE","CHE",
         "TWN","GBR_NP","GBRTENW","GBR_NIR","GBR_SCO",
@@ -147,127 +133,170 @@ Name<-c("AUT","BLR","BEL","BGR","CAN","CHL",
 Name2<-c("Austria","Belarus","Belgium","Bulgaria",
          "Canada","Chile","Croatia","Czechia",
          "Denmark","Estonia","Finland",
-         "Germany",
+         "Germany","Germany East","Germany West",
          "Hungary","Iceland","Ireland","Italy",
          "Japan","Lithuania","The Netherlands","Norway",
          "Poland","Portugal","Republic of Korea",
          "Russia","Slovakia","Slovenia","Spain",
          "Sweden","Switzerland","Taiwan","United Kingdom",
          "England and Wales","Northern Ireland","Scotland",
-         "Ukraine","USA") 
-
-#CAN=5  DNK=9 IRL=17 ITA=18 
-#JPN=19 NLD=21 KOR=25   RUS=26
-#GBR_NP=33 GBRENW=34 GBR_SCO=36
-#SWE=30  TWN=32  USA=38
+         "Ukraine","United States") 
 
 
-N<-c(1:21,23:36)
+ALL<-c()
+## selected countries without data issues 
+N<-c(1,3:5,7:12,15:25,27:36,38)
+
+
+########################################################################################
+########################        DATA       #############################################
+########################################################################################
 
 
 
+####   first preparing the data, and creating the new first birth age-specific fertility rates
 
-
-
-####### Fig 1  Age-Components of TFR
-
-B_all <- c()
 
 for (w in 1:length(N)){
-
-  i<-N[w]
-
-setwd(paste("C:/Users/u1019088/DATA/HFD/",Name[i],sep=""))
-
-A0<-read.table(paste(Name[i],"asfrRRbo.txt",sep=""),header=TRUE, skip=2)[,c(1:4)]
-
-A0<-A0[A0$Year>1999,]
-
-Rg<-range(A0$Year)
-
-A1<-A0[(A0$Year==Rg[1])|(A0$Year==Rg[2]),]
-A1$Pop<-rep(Name[i],dim(A1)[1])
-
-ASFR1<-A1
-
-A1<-ASFR1[ASFR1$Year==Rg[1],]
-A2<-ASFR1[ASFR1$Year==Rg[2],]
-
-A1$Age <- as.numeric(gsub("[^0-9]", "", A1$Age))
-A2$Age <- as.numeric(gsub("[^0-9]", "", A2$Age))
-
-LT1<-LifeTableMx(A1$ASFR1)
-LT2<-LifeTableMx(A2$ASFR1)
-
-Age<-A1$Age
-
-AFR11<-cumsum(Fertility1(LT1,A1))
-AFR12<-cumsum(Fertility1(LT2,A2))
-
-AFR1<-cumsum(A1$ASFR)
-AFR2<-cumsum(A2$ASFR)
-
-B1 <- data.frame(Age = Age,AFR1 = AFR11,AFR = AFR1)
-B2 <- data.frame(Age = Age,AFR1 = AFR12,AFR = AFR2)
-
-B2$PC<-LT2$lx/100000
-B2$Year <- Rg[2] 
-B2$Country <- Name[i]
-
-B1$PC<-LT1$lx/100000
-B1$Year <- Rg[1] 
-B1$Country <- Name[i]
-
-B_all <- rbind(B_all,B1,B2)
-}
-
-Components<-B_all
-
-setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC/Data")
-
-write.csv(B_all, "AgeComponents.csv", row.names = FALSE)
-
-
-
-
-
-####### Fig 1b  Components of TFR
-
-F <- c()
-
-for (w in 1:length(N)){
-  
-  i<-N[w]
-  
-  setwd(paste("C:/Users/u1019088/DATA/HFD/",Name[i],sep=""))
+   i<-N[w]
+   
+  setwd(paste(".../DATA/HFD/",Name[i],sep=""))
   
   A0<-read.table(paste(Name[i],"asfrRRbo.txt",sep=""),header=TRUE, skip=2)[,c(1:4)]
   
-  setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC")
+  B1<-read.table(paste(Name[i],"birthsRRbo.txt",sep=""),header=TRUE, skip=2)[,c(1:4)]
+  
+  E1<-read.table(paste(Name[i],"exposRR.txt",sep=""),header=TRUE, skip=2)
+  
+  setwd(".../Articles/TFR & PC/Data/NewASFR1")
+  
+## we fill the data with the information from the first year  
+    
+  B1$Age <- as.character( B1$Age)
+  B1$Age[ B1$Age=="12-"] <- "12"
+  B1$Age[ B1$Age=="55+"] <- "55"
+  B1$Age <- as.numeric( B1$Age)
+  
+  
+  E1$Age <- as.character( E1$Age)
+  E1$Age[ E1$Age=="12-"] <- "12"
+  E1$Age[ E1$Age=="55+"] <- "55"
+  E1$Age <- as.numeric( E1$Age)
+  
+  BE1 <- inner_join(
+    B1,
+    E1,
+    by = c("Year", "Age")
+  ) 
+   
+  BE1<-BE1[BE1$Year>1900,]  # instead this gives you all the twentieth century 
+  BE1<-BE1[BE1$Age>14,]     # which can be useful to compare period and cohort
+  
+  BE1 <- BE1 %>%
+    group_by(Year) %>%
+    mutate( asf1 = B1/Exposure,
+      B1_cum_lag = lag(cumsum(asf1), default = 0)) %>%
+    ungroup()
+  
+  
+  #and create a new database that calculates the
+  # ASFR for first births with the exposure 
+  # the total number of women minus the number of 
+  # first births accumulated and half of those in each age
+  
+  
+  YA <- BE1 %>% 
+    group_by(Year) %>%
+    mutate(
+      Ratio = B1_cum_lag + (B1/(Exposure*2)),
+      ASFR1 = B1 / (Exposure * (1 - Ratio)),
+      ASFR = Total/Exposure,
+      lx = LifeTableMx(ASFR1)$lx,
+      ASFR1pp = if_else(Exposure * Ratio>0,((Total - B1) / (Exposure * Ratio)),0),
+      ASFR1p = ASFR1pp*(sum(ASFR)/(1-(lx[41]/100000)))/sum(ASFR1pp)
+    ) %>%
+    ungroup()
+  
+   
+  
+  YA[is.nan(YA$ASFR1p),]$ASFR1p<-0
+  YA[YA$ASFR1p == Inf, "ASFR1p"] <- 0
+  YA[YA$Age==12,]$ASFR1p<-0
+  
+      
+
+TFR<-colSums(matrix(YA$ASFR,(55-15+1)))
+TFR1<-colSums(matrix(YA$ASFR1p,(55-15+1)))
+PC<-1-(TFR/TFR1)
+Year<-unique(YA$Year)
+Population<-rep(Name[i],length(unique(YA$Year)))
+PCb<-YA[YA$Age==55,]$lx/100000
+TFR1b<-TFR/(1-PCb)
+
+ALL<-rbind(ALL,cbind(Population,Year,TFR,TFR1,TFR1b,PC,PCb))
+
+
+  
+YAs<-data.frame(cbind(YA$Year,YA$Age,YA$ASFR,YA$ASFR1,YA$ASFR1p))
+colnames(YAs)<-c("Year","Age","ASFR","ASFR1","ASFR1p")
+B1<-c()
+E1<-c()
+A0<-c()
+write.csv(YAs,paste(Name[i],"NewASFR1b.txt",sep=""), row.names = FALSE)
+}
+
+
+
+
+
+
+
+
+########################################################################################
+########################  NOW THE FIGURES  #############################################
+########################################################################################
+
+
+
+
+####### Figure   Components of TFR
+
+F <- c()
+
+
+for (w in 1:length(N)){
+  
+  i<-N[w]
+  
+  setwd("..... /Articles/TFR & PC/Data/NewASFR1")
+  
+  A0<-read.table(paste(Name[i],"NewASFR1.txt",sep=""),header=TRUE,sep=",")
+  
+  setwd("...../Articles/TFR & PC/Results")
   
   A0<-A0[A0$Year>1999,]
    
   Rg<-range(A0$Year)
+  
+ 
   F1<-c()
-  
   for (t in Rg[1]:Rg[2]){
+     if((Name[i]=="POL")&((t==2018))){t<-2019}
+ 
+    A1<-A0[(A0$Year==t),]
     
-    if((Name[i]=="POL")&((t==2018))){t<-2019}
-  A1<-A0[(A0$Year==t),]
+    TFR<-sum(A1$ASFR)
+    LT<-LifeTableMx(A1$ASFR1)
+    PC<-LT$lx[41]/100000
+    TFR1<-TFR/(1-PC)
+    
+    Country<-Name[i]
+    Year<-t
+    
+    F1<- rbind(F1,cbind(Country,Year,TFR,PC,TFR1))
+  }
   
-  TFR<-sum(A1$ASFR)
-  LT<-LifeTableMx(A1$ASFR1)
-  PC<-LT$lx[44]/100000
-  TFR1<-sum(Fertility1(LT1,A1))
-  
-  Country<-Name[i]
-  Year<-t
-  
-  F1<- rbind(F1,cbind(Country,Year,TFR,PC,TFR1))
-}
-  
-F<-rbind(F,F1)
-
+  F<-rbind(F,F1)
 }
 
 F <- as.data.frame(F)
@@ -277,14 +306,19 @@ F$TFR   <- as.numeric(F$TFR)
 F$TFR1  <- as.numeric(F$TFR1)
 F$PC    <- as.numeric(F$PC)
 
-setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC/Data")
+setwd("..... /Articles/TFR & PC/shiny")
 
 write.csv(F, "TFRComponents.csv", row.names = FALSE)
 
 
 
-########## Figure Time trends
 
+
+
+
+
+
+########## Figure Time trends
 
 
 D <- c()
@@ -293,85 +327,138 @@ for (w in 1:length(N)){
   
   i<-N[w]
   
-  setwd(paste("C:/Users/u1019088/DATA/HFD/",Name[i],sep=""))
+  setwd(".... /Articles/TFR & PC/Data/NewASFR1")
   
-  A0<-read.table(paste(Name[i],"asfrRRbo.txt",sep=""),header=TRUE, skip=2)[,c(1:4)]
+  A0<-read.table(paste(Name[i],"NewASFR1.txt",sep=""),header=TRUE,sep=",")
   
-  setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC")
+  setwd("..../Articles/TFR & PC/Results")
   
   A0<-A0[A0$Year>1999,]
   
   Rg<-range(A0$Year)
   
-Cont<-c()
-ASFR1<-A0 
-
-for (t in 1:(Rg[2]-Rg[1])){
+  Cont<-c()
+  ASFR1<-A0 
   
-  if((Name[i]=="POL")&((t==18)|(t==19))){t<-20}
-  A1<-ASFR1[ASFR1$Year==(Rg[1]+(t-1)),]
-  A2<-ASFR1[ASFR1$Year==(Rg[1]+t),]
+  for (t in 1:(Rg[2]-Rg[1])){
+    
+    if((Name[i]=="POL")&((t==18)|(t==19))){t<-20}
+    A1<-ASFR1[ASFR1$Year==(Rg[1]+(t-1)),]
+    A2<-ASFR1[ASFR1$Year==(Rg[1]+t),]
+    
+    LT1<-LifeTableMx(A1$ASFR1)
+    LT2<-LifeTableMx(A2$ASFR1)
+    
+    TFR1<-sum(A1$ASFR)
+    PC1<-LT1$lx[41]/100000
+    
+    TFR2<-sum(A2$ASFR)
+    PC2<-LT2$lx[41]/100000
+    
+    
+    TFR1n<-(TFR1)/(1-PC1)
+    TFR2n<-(TFR2)/(1-PC2)
+    
+    
+    ## changes continuous
+    
+    CTFR<-log(TFR2/TFR1)*sqrt(TFR1*TFR2)
+    
+    Term1<-log(TFR2n/TFR1n)*sqrt(TFR1n*TFR2n)*sqrt((1-PC1)*(1-PC2))
+    Term2<-log(PC2/PC1)*sqrt(PC1*PC2)*sqrt(TFR1n*TFR2n)
+    
+    Cont<-rbind(Cont,c(CTFR,Term1,-Term2,Term1-Term2))
+    
+    
+  }
   
-  LT1<-LifeTableMx(A1$ASFR1)
-  LT2<-LifeTableMx(A2$ASFR1)
-  
-  TFR1<-sum(A1$ASFR)
-  PC1<-LT1$lx[44]/100000
-  
-  TFR2<-sum(A2$ASFR)
-  PC2<-LT2$lx[44]/100000
+  Year<-Rg[1]:(Rg[2]-1)
+  Eq2<-c("CTFR","Term1","Term2","Term1+2")
   
   
-  TFR1n<-(TFR1)/(1-PC1)
-  TFR2n<-(TFR2)/(1-PC2)
+  df2 <- reshape2::melt(Cont[,-1], c("Year","Eq2"), value.name = "values")
+  df2$Year<-df2$Year+Rg[1]-1
+  df2$Eq2<-as.character(df2$Eq2)
   
   
-  ## changes continuous
-  
-  CTFR<-log(TFR2/TFR1)*sqrt(TFR1*TFR2)
-  
-  Term1<-log(TFR2n/TFR1n)*sqrt(TFR1n*TFR2n)*sqrt((1-PC1)*(1-PC2))
-  Term2<-log(PC2/PC1)*sqrt(PC1*PC2)*sqrt(TFR1n*TFR2n)
-  
-  Cont<-rbind(Cont,c(CTFR,Term1,-Term2,Term1-Term2))
-  
-  
-}
-
-Year<-Rg[1]:(Rg[2]-1)
-Eq2<-c("CTFR","Term1","Term2","Term1+2")
-
-
-df2 <- reshape2::melt(Cont[,c(2,3)], c("Year","Eq3"), value.name = "values")
-df2$Year<-df2$Year+Rg[1]-1
-df2$Eq3<-as.character(df2$Eq3)
-
-
-df_agg <- df2 %>%
-  filter(Eq3 %in% c(1, 2)) %>%
-  mutate(
-    Period = case_when(
-      Year >= 2000 & Year <= 2004 ~ "2000-2005",
-      Year >= 2005 & Year <= 2009 ~ "2005-2010",
-      Year >= 2010 & Year <= 2014 ~ "2010-2015",
-      Year >= 2015 & Year <= 2019 ~ "2015-2020",
-      Year >= 2020                ~ "2020+"
+  df_agg <- df2 %>%
+    filter(Eq2 %in% c(1, 2)) %>%
+    mutate(
+      Period = case_when(
+        Year >= 2000 & Year <= 2004 ~ "2000-2005",
+        Year >= 2005 & Year <= 2009 ~ "2005-2010",
+        Year >= 2010 & Year <= 2014 ~ "2010-2015",
+        Year >= 2015 & Year <= 2019 ~ "2015-2020",
+        Year >= 2020                ~ "2020+"
+      )
+    ) %>%
+    group_by(Period, Eq2) %>%
+    summarise(
+      values = sum(values, na.rm = TRUE),
+      .groups = "drop"
     )
-  ) %>%
-  group_by(Period, Eq3) %>%
-  summarise(
-    values = sum(values, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-df_agg$Country<-Name[i]
   
-D<-rbind(D,df_agg)
+  df_agg$Country<-Name[i]
+  
+  D<-rbind(D,df_agg)
 }
 
-setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC/Data")
+
+D <- as.data.frame(D)
+
+D$Eq2  <- as.numeric(D$Eq2)
+
+setwd("..../Articles/TFR & PC/shiny")
 
 write.csv(D,"TimeTrends.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+####### Figure  Age-Components of TFR
+
+B_all <- c()
+
+for (w in 1:length(N)){
+
+  i<-N[w]
+
+  setwd("..../Articles/TFR & PC/Data/NewASFR1")
+  
+  A0<-read.table(paste(Name[i],"NewASFR1.txt",sep=""),header=TRUE,sep=",")
+  
+  setwd("..../Articles/TFR & PC/Results")
+  
+A0<-A0[A0$Year>1999,]
+Rg<-range(A0$Year)
+
+B1<-Fertility(A0,1,i)
+B2<-Fertility(A0,2,i)
+
+B_all <- rbind(B_all,B1,B2)
+}
+
+Components<-as.data.frame(B_all)
+
+
+setwd("..../Articles/TFR & PC/shiny")
+
+write.csv(B_all, "AgeComponents.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
 
 
 
@@ -383,50 +470,37 @@ E <- c()
 
 
 for (w in 1:length(N)){
-
+  
+  E2 <- c()
+  
   i<-N[w]
 
-setwd(paste("C:/Users/u1019088/DATA/HFD/",Name[i],sep=""))
-
-A0<-read.table(paste(Name[i],"asfrRRbo.txt",sep=""),header=TRUE, skip=2)[,c(1:4)]
-
-setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC")
-
+  setwd("..../Articles/TFR & PC/Data/NewASFR1")
+  
+  A0<-read.table(paste(Name[i],"NewASFR1.txt",sep=""),header=TRUE,sep=",")
+  
+  setwd("..../Articles/TFR & PC/Results")
+  
 A0<-A0[A0$Year>1999,]
+
+Rg<-range(A0$Year)
+Rg<-c(Rg[1],2010)
+
+B1<-Fertility(A0,1,i)
+B2<-Fertility(A0,2,i)
+
+E2<-rbind(E2,AgeDecomp(B1,B2,Rg[1]))
 
 
 Rg<-range(A0$Year)
+Rg<-c(2010,Rg[2])
 
-A1<-A0[(A0$Year==Rg[1])|(A0$Year==Rg[2]),]
-A1$Pop<-rep(Name[i],dim(A1)[1])
+B1<-Fertility(A0,1,i)
+B2<-Fertility(A0,2,i)
 
-ASFR1<-A1
+E2<-rbind(E2,AgeDecomp(B1,B2,Rg[2]))
 
-A1<-ASFR1[ASFR1$Year==Rg[1],]
-A2<-ASFR1[ASFR1$Year==Rg[2],]
-
-A1$Age <- as.numeric(gsub("[^0-9]", "", A1$Age))
-A2$Age <- as.numeric(gsub("[^0-9]", "", A2$Age))
-
-LT1<-LifeTableMx(A1$ASFR1)
-LT2<-LifeTableMx(A2$ASFR1)
-
-Age<-A1$Age
-
-AFR11<-cumsum(Fertility1(LT1,A1))
-AFR12<-cumsum(Fertility1(LT2,A2))
-
-AFR1<-cumsum(A1$ASFR)
-AFR2<-cumsum(A2$ASFR)
-
-B1 <- data.frame(Age = Age,AFR1 = AFR11,AFR = AFR1)
-B2 <- data.frame(Age = Age,AFR1 = AFR12,AFR = AFR2)
-
-D_df<-AgeDecomp(LT1,B1,A1,LT2,B2,A2)
-
-colSums(D_df)
-
-D_long <- D_df |>
+D_long <- E2 |>
   pivot_longer(
     cols = c(termf1, termPC),
     names_to = "component",
@@ -445,6 +519,22 @@ E<-rbind(E,D_long)
 }
 
 
-setwd("C:/Users/u1019088/OneDrive - Australian National University/Articles/TFR & PC/Data")
+E <- as.data.frame(E)
+
+E$Year  <- as.numeric(E$Year)
+E$age  <- as.numeric(E$age)
+E$Decomp  <- as.numeric(E$Decomp)
+E$value  <- as.numeric(E$value)
+
+
+E <-E %>%
+  mutate(
+    Period = case_when(
+      Year >= 2000 & Year < 2010 ~ paste(Year,"-2010",sep=""),
+      Year >= 2010 & Year <= 2026 ~ paste("2010-",Year,sep="")
+    ) )
+
+
+setwd("..../Articles/TFR & PC/shiny")
 
 write.csv(E,"AgeDecomposition.csv", row.names = FALSE)
